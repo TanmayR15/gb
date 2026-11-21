@@ -15,15 +15,17 @@
   <canvas id="gb" width="160" height="144"></canvas>
   <div id="bar">Loading rom.gb...</div>
 
+  <script>
+    // Define globals before GameBoyCore.js initializes audio/CPU state
+    window.settings = [false, false, false, 1, true, false, 8, 10, 20, false, false, false, false, true, [true, true, true, true]];
+    window.cout = function () {};
+    window.pause = function () {};
+  </script>
   <script src="js/other/base64.js"></script>
   <script src="js/other/resampler.js"></script>
   <script src="js/other/XAudioServer.js"></script>
   <script src="js/GameBoyCore.js"></script>
   <script>
-    var settings = [false, false, false, 1, true, false, 8, 10, 20, false, false, false, false, true, [true, true, true, true]];
-    function cout() {}
-    function pause() {}
-
     var gb = null;
     var canvas = document.getElementById("gb");
     var bar = document.getElementById("bar");
