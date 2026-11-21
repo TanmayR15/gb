@@ -30,19 +30,22 @@
     var gb = null;
     var bar = document.getElementById("bar");
 
+    function tickFrame() {
+      if (!gb) return;
+      gb.stopEmulator = 0;
+      gb.run();
+      if (typeof gb.requestDraw === "function") gb.requestDraw();
+    }
+
     function bootEmulator(romBinary) {
       try {
         gb = new GameBoyCore(canvas, romBinary);
         gb.start();
         if (typeof gb.stopSound === "function") gb.stopSound();
         loadSave();
-        if (typeof gb.requestDraw === "function") gb.requestDraw();
+        tickFrame();
         bar.innerHTML = "D-Pad: Move | 5: A | 8: B<br>0: Start | #: Select | *: Save";
-        setInterval(function () {
-          if (!gb) return;
-          gb.run();
-          if (typeof gb.requestDraw === "function") gb.requestDraw();
-        }, 16);
+        setInterval(tickFrame, 16);
       } catch (err) {
         bar.innerHTML = "BOOT ERR: " + err.message;
       }
