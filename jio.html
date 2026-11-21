@@ -31,6 +31,31 @@
     var gb = null;
     var bar = document.getElementById("bar");
 
+    var keyCodeMap = {
+      39: 0, // Right
+      37: 1, // Left
+      38: 2, // Up
+      40: 3, // Down
+      53: 4, // 5 -> A
+      13: 4, // Enter -> A
+      56: 5, // 8 -> B
+      48: 7  // 0 -> Start
+    };
+
+    function mapKey(e) {
+      if (e.key === "ArrowRight" || e.key === "Right") return 0;
+      if (e.key === "ArrowLeft"  || e.key === "Left")  return 1;
+      if (e.key === "ArrowUp"    || e.key === "Up")    return 2;
+      if (e.key === "ArrowDown"  || e.key === "Down")  return 3;
+      if (e.key === "5") return 4;
+      if (e.key === "Enter") return 4;
+      if (e.key === "8") return 5;
+      if (e.key === "#") return 6;
+      if (e.key === "0") return 7;
+      if (keyCodeMap.hasOwnProperty(e.keyCode)) return keyCodeMap[e.keyCode];
+      return -1;
+    }
+
     function tickFrame() {
       if (!gb) return;
       gb.stopEmulator = 0;
@@ -101,32 +126,27 @@
       } catch (e) {}
     }
 
-    var keyMap = {
-      "ArrowRight": 0,
-      "ArrowLeft": 1,
-      "ArrowUp": 2,
-      "ArrowDown": 3,
-      "5": 4,
-      "Enter": 4,
-      "8": 5,
-      "#": 6,
-      "0": 7
-    };
-
     window.addEventListener("keydown", function (e) {
-      if (e.key === "*") { saveGame(); e.preventDefault(); return; }
-      if (keyMap.hasOwnProperty(e.key) && gb) {
-        gb.JoyPadEvent(keyMap[e.key], true);
+      bar.innerHTML = "key=" + e.key + " | kc=" + e.keyCode;
+      if (e.key === "*") {
+        saveGame();
+        e.preventDefault();
+        return;
+      }
+      var btn = mapKey(e);
+      if (btn !== -1) {
+        if (gb) gb.JoyPadEvent(btn, true);
         e.preventDefault();
       }
-    });
+    }, true);
 
     window.addEventListener("keyup", function (e) {
-      if (keyMap.hasOwnProperty(e.key) && gb) {
-        gb.JoyPadEvent(keyMap[e.key], false);
+      var btn = mapKey(e);
+      if (btn !== -1) {
+        if (gb) gb.JoyPadEvent(btn, false);
         e.preventDefault();
       }
-    });
+    }, true);
 
     loadROM();
   </script>
