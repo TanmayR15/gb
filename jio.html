@@ -7,8 +7,8 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; color: #0f0; font-family: monospace; text-align: center; overflow: hidden; }
-    canvas { width: 240px; height: 216px; display: block; margin: 10px auto 6px; image-rendering: -moz-crisp-edges; }
-    #bar { font-size: 11px; color: #aaa; line-height: 1.4; }
+    canvas { width: 240px; height: 216px; display: block; margin: 10px auto 6px; background: #9bbc0f; image-rendering: -moz-crisp-edges; }
+    #bar { font-size: 11px; color: #aaa; line-height: 1.4; padding: 0 6px; }
   </style>
 </head>
 <body>
@@ -20,7 +20,6 @@
   <script src="js/other/XAudioServer.js"></script>
   <script src="js/GameBoyCore.js"></script>
   <script>
-    // Required globals expected by GameBoyCore.js when GameBoyIO.js is omitted
     var settings = [false, false, false, 1, true, false, 8, 10, 20, false, false, false, false, true, [true, true, true, true]];
     function cout() {}
     function pause() {}
@@ -29,33 +28,46 @@
     var canvas = document.getElementById("gb");
     var bar = document.getElementById("bar");
 
+    function bootEmulator(romBinary) {
+      try {
+        gb = new GameBoyCore(canvas, romBinary);
+        gb.start();
+        if (typeof gb.stopSound === "function") gb.stopSound();
+        loadSave();
+        if (typeof gb.requestDraw === "function") gb.requestDraw();
+        bar.innerHTML = "D-Pad: Move | 5: A | 8: B<br>0: Start | #: Select | *: Save";
+        setInterval(function () {
+          if (!gb) return;
+          gb.run();
+          if (typeof gb.requestDraw === "function") gb.requestDraw();
+        }, 16);
+      } catch (err) {
+        bar.innerHTML = "BOOT ERR: " + err.message;
+      }
+    }
+
     function loadROM() {
       var xhr = new XMLHttpRequest();
-      xhr.open("GET", "rom.gb", true);
+      xhr.open("GET", "rom.gb?t=" + Date.now(), true);
       xhr.responseType = "arraybuffer";
       xhr.onload = function () {
-        if (xhr.status !== 200) {
-          bar.innerHTML = "ERROR " + xhr.status + ": rom.gb not found in repo!";
+        if (xhr.status !== 200 || !xhr.response) {
+          bar.innerHTML = "HTTP " + xhr.status + " loading rom.gb";
           return;
         }
-        try {
-          var bytes = new Uint8Array(xhr.response);
-          var bin = "";
-          for (var i = 0; i < bytes.length; i++) {
-            bin += String.fromCharCode(bytes[i]);
-          }
-          gb = new GameBoyCore(canvas, bin);
-          gb.start();
-          gb.stopSound();
-          loadSave();
-          bar.innerHTML = "D-Pad: Move | 5: A | 8: B<br>0: Start | #: Select | *: Save";
-          setInterval(function () { if (gb) gb.run(); }, 16);
-        } catch (err) {
-          bar.innerHTML = "CORE ERROR: " + err.message;
+        var bytes = new Uint8Array(xhr.response);
+        if (bytes.length < 1024) {
+          bar.innerHTML = "BAD ROM SIZE: " + bytes.length + " bytes";
+          return;
         }
+        var chunks = [];
+        for (var i = 0; i < bytes.length; i++) {
+          chunks.push(String.fromCharCode(bytes[i]));
+        }
+        bootEmulator(chunks.join(""));
       };
       xhr.onerror = function () {
-        bar.innerHTML = "NETWORK ERROR loading rom.gb";
+        bar.innerHTML = "XHR ERROR loading rom.gb";
       };
       xhr.send();
     }
@@ -72,7 +84,9 @@
     function loadSave() {
       try {
         var saved = localStorage.getItem("pkmn_red_sram");
-        if (saved && gb) gb.openSRAM(JSON.parse(saved));
+        if (saved && gb && typeof gb.openSRAM === "function") {
+          gb.openSRAM(JSON.parse(saved));
+        }
       } catch (e) {}
     }
 
