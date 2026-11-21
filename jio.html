@@ -2,138 +2,122 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=240, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Pokemon Red</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
+      margin: 0;
+      padding: 0;
       width: 100%;
       height: 100%;
-      position: fixed;
-      inset: 0;
       overflow: hidden;
+      position: fixed;
       background: #000;
-      color: #0f0;
+      color: #ccc;
       font-family: monospace;
       text-align: center;
     }
+    #wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+    }
     canvas {
-      width: 240px;
-      height: 216px;
       display: block;
-      margin: 10px auto 6px;
       background: #9bbc0f;
       image-rendering: -moz-crisp-edges;
+      image-rendering: pixelated;
+      width: 240px;
+      height: 216px;
       outline: none;
     }
-    #bar { font-size: 10px; color: #aaa; line-height: 1.4; padding: 0 4px; }
-    body.fs canvas {
-      width: 100vw;
-      height: 100vh;
-      margin: 0;
-    }
-    body.fs #bar {
-      display: none;
+    #bar {
+      margin-top: 6px;
+      font-size: 10px;
+      line-height: 1.3;
+      color: #aaa;
     }
   </style>
 </head>
 <body>
-  <canvas id="gb" width="160" height="144" tabindex="0"></canvas>
-  <div id="bar">Loading rom.gb...</div>
+  <div id="wrap">
+    <canvas id="gb" width="160" height="144" tabindex="0"></canvas>
+    <div id="bar">Loading rom.gb...</div>
+  </div>
 
-  <script>
-    var canvas = document.getElementById("gb");
-    window.settings = [false, false, false, 1, true, false, 8, 10, 20, false, false, false, false, true, [true, true, true, true]];
-    window.cout = function () {};
-    window.pause = function () {};
-    window.initNewCanvas = function () { return canvas; };
-  </script>
+  <script src="js/other/terminal.js"></script>
   <script src="js/other/base64.js"></script>
+  <script src="js/other/swfobject.js"></script>
   <script src="js/other/resampler.js"></script>
   <script src="js/other/XAudioServer.js"></script>
+  <script src="js/other/resize.js"></script>
   <script src="js/GameBoyCore.js"></script>
   <script src="js/GameBoyIO.js"></script>
   <script>
-    var gb = null;
+    var canvas = document.getElementById("gb");
     var bar = document.getElementById("bar");
-    var defaultBar = "2/4/6/8: Move | 1: A | 3: B<br>0: Start | 9: Select | *: Save";
-
-    // GameBoyCore JoyPadEvent codes:
-    // 0 = Right, 1 = Left, 2 = Up, 3 = Down, 4 = A, 5 = B, 6 = Select, 7 = Start
-    var keyCodeMap = {
-      39: 0, 54: 0, // ArrowRight or 6 -> Right
-      37: 1, 52: 1, // ArrowLeft  or 4 -> Left
-      38: 2, 50: 2, // ArrowUp    or 2 -> Up
-      40: 3, 56: 3, // ArrowDown  or 8 -> Down
-      49: 4, 13: 4, // 1 or Enter      -> A
-      51: 5,        // 3               -> B
-      57: 6,        // 9               -> Select
-      48: 7         // 0               -> Start
-    };
-
-    function mapKey(e) {
-      if (e.key === "ArrowRight" || e.key === "Right" || e.key === "6") return 0;
-      if (e.key === "ArrowLeft"  || e.key === "Left"  || e.key === "4") return 1;
-      if (e.key === "ArrowUp"    || e.key === "Up"    || e.key === "2") return 2;
-      if (e.key === "ArrowDown"  || e.key === "Down"  || e.key === "8") return 3;
-      if (e.key === "1" || e.key === "Enter") return 4;
-      if (e.key === "3") return 5;
-      if (e.key === "9") return 6;
-      if (e.key === "0") return 7;
-      if (keyCodeMap.hasOwnProperty(e.keyCode)) return keyCodeMap[e.keyCode];
-      return -1;
-    }
+    var gb = null;
+    var SAVE_KEY = "pkmn_red_sram";
+    var defaultBar = "2/4/6/8: Move | 1: A | 3: B<br>0: Start | 9: Select | 7: Full | *: Save";
 
     function lockFocus() {
-      if (canvas && typeof canvas.focus === "function") {
-        try { canvas.focus(); } catch (e) {}
+      try { window.focus(); canvas.focus(); } catch (e) {}
+    }
+
+    function saveGame(silent) {
+      try {
+        if (!gb) return;
+        var data = null;
+        if (gb.MBCRam && gb.MBCRam.length) {
+          data = Array.prototype.slice.call(gb.MBCRam);
+        } else if (typeof gb.saveSRAMState === "function") {
+          data = gb.saveSRAMState();
+        }
+        if (data && data.length) {
+          localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+          if (!silent) {
+            bar.innerHTML = "SAVED TO BROWSER!";
+            setTimeout(function () { bar.innerHTML = defaultBar; }, 1500);
+          }
+        }
+      } catch (e) {
+        if (!silent) bar.innerHTML = "SAVE ERR: " + e.message;
       }
     }
 
-    function isFullscreen() {
-      return !!(
-        document.fullscreenElement ||
-        document.mozFullScreenElement ||
-        document.webkitFullscreenElement ||
-        document.body.classList.contains("fs")
-      );
+    function loadSave() {
+      try {
+        var saved = localStorage.getItem(SAVE_KEY);
+        if (!saved || !gb || !gb.MBCRam) return;
+        var parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          for (var i = 0; i < parsed.length && i < gb.MBCRam.length; i++) {
+            gb.MBCRam[i] = Number(parsed[i]) & 0xff;
+          }
+          gb.MBCRAMBanksEnabled = true;
+        }
+      } catch (e) {}
+    }
+
+    function tickFrame() {
+      if (!gb) return;
+      gb.stopEmulator &= 1;
+      gb.iterations = 0;
+      gb.run();
     }
 
     function toggleFullscreen() {
       var el = document.documentElement;
-      if (!isFullscreen()) {
-        document.body.classList.add("fs");
-        var req = el.requestFullscreen || el.mozRequestFullScreen || el.webkitRequestFullscreen;
-        if (req) {
-          try { req.call(el); } catch (err) {}
-        }
+      if (!document.fullscreenElement && !document.mozFullScreenElement) {
+        if (el.requestFullscreen) el.requestFullscreen();
+        else if (el.mozRequestFullScreen) el.mozRequestFullScreen();
       } else {
-        document.body.classList.remove("fs");
-        var exit = document.exitFullscreen || document.mozCancelFullScreen || document.webkitExitFullscreen;
-        if (exit) {
-          try { exit.call(document); } catch (err) {}
-        }
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
       }
-      lockFocus();
-    }
-
-    document.addEventListener("fullscreenchange", function () {
-      document.body.classList.toggle("fs", isFullscreen());
-    });
-    document.addEventListener("mozfullscreenchange", function () {
-      document.body.classList.toggle("fs", isFullscreen());
-    });
-
-    function tickFrame() {
-      if (!gb) return;
-      gb.stopEmulator = 0;
-      if (typeof gb.executeIteration === "function") {
-        gb.emulatorTicks = 0;
-        gb.CPUCyclesTotal = 70224;
-        gb.executeIteration();
-      }
-      if (typeof gb.run === "function") gb.run();
-      if (typeof gb.requestDraw === "function") gb.requestDraw();
     }
 
     function bootEmulator(romBinary) {
@@ -142,10 +126,13 @@
         gb.start();
         if (typeof gb.stopSound === "function") gb.stopSound();
         loadSave();
-        tickFrame();
-        lockFocus();
         bar.innerHTML = defaultBar;
-        setInterval(tickFrame, 16);
+        lockFocus();
+        setTimeout(function () {
+          tickFrame();
+          setInterval(tickFrame, 33);
+          setInterval(function () { saveGame(true); }, 30000);
+        }, 50);
       } catch (err) {
         bar.innerHTML = "BOOT ERR: " + err.message;
       }
@@ -153,81 +140,82 @@
 
     function loadROM() {
       var xhr = new XMLHttpRequest();
-      xhr.open("GET", "rom.gb?t=" + Date.now(), true);
-      xhr.responseType = "arraybuffer";
+      xhr.open("GET", "rom.gb", true);
+      xhr.overrideMimeType("text/plain; charset=x-user-defined");
       xhr.onload = function () {
-        if (xhr.status !== 200 || !xhr.response) {
-          bar.innerHTML = "HTTP " + xhr.status + " loading rom.gb";
-          return;
+        if (xhr.status === 200 || xhr.status === 0) {
+          var raw = xhr.responseText;
+          var bin = "";
+          for (var i = 0; i < raw.length; i++) {
+            bin += String.fromCharCode(raw.charCodeAt(i) & 0xff);
+          }
+          bar.innerHTML = "Starting emulator...";
+          setTimeout(function () { bootEmulator(bin); }, 50);
+        } else {
+          bar.innerHTML = "ROM ERR: HTTP " + xhr.status;
         }
-        var bytes = new Uint8Array(xhr.response);
-        if (bytes.length < 1024) {
-          bar.innerHTML = "BAD ROM SIZE: " + bytes.length + " bytes";
-          return;
-        }
-        var chunks = [];
-        for (var i = 0; i < bytes.length; i++) {
-          chunks.push(String.fromCharCode(bytes[i]));
-        }
-        bootEmulator(chunks.join(""));
       };
       xhr.onerror = function () {
-        bar.innerHTML = "XHR ERROR loading rom.gb";
+        bar.innerHTML = "ROM NETWORK ERROR";
       };
-      xhr.send();
+      xhr.send(null);
     }
 
-    function saveGame() {
+    var keyMap = {
+      "6": 0, "ArrowRight": 0,
+      "4": 1, "ArrowLeft": 1,
+      "2": 2, "ArrowUp": 2,
+      "8": 3, "ArrowDown": 3,
+      "1": 4, "Enter": 4,
+      "3": 5,
+      "9": 6,
+      "0": 7
+    };
+
+    var keyCodeMap = {
+      39: 0, 54: 0, 102: 0,
+      37: 1, 52: 1, 100: 1,
+      38: 2, 50: 2, 104: 2,
+      40: 3, 56: 3, 98: 3,
+      49: 4, 13: 4, 97: 4, 35: 4,
+      51: 5, 99: 5, 34: 5,
+      57: 6, 105: 6,
+      48: 7, 96: 7
+    };
+
+    function resolveBtn(e) {
+      if (e.key && keyMap.hasOwnProperty(e.key)) return keyMap[e.key];
+      if (keyCodeMap.hasOwnProperty(e.keyCode)) return keyCodeMap[e.keyCode];
+      return -1;
+    }
+
+    function handleKey(e, isDown) {
       if (!gb) return;
-      try {
-        var sram = gb.saveSRAMState();
-        localStorage.setItem("pkmn_red_sram", JSON.stringify(sram));
-        bar.innerHTML = "SAVED TO BROWSER!";
-        setTimeout(function () { bar.innerHTML = defaultBar; }, 2000);
-      } catch (e) {}
+      if (e.key === "*" || e.keyCode === 42 || e.keyCode === 106) {
+        e.preventDefault();
+        if (isDown) saveGame(false);
+        return;
+      }
+      if (e.key === "7" || e.keyCode === 55 || e.keyCode === 103) {
+        e.preventDefault();
+        if (isDown) toggleFullscreen();
+        return;
+      }
+      var btn = resolveBtn(e);
+      if (btn !== -1) {
+        e.preventDefault();
+        gb.JoyPadEvent(btn, isDown);
+      }
     }
 
-    function loadSave() {
-      try {
-        var saved = localStorage.getItem("pkmn_red_sram");
-        if (saved && gb && typeof gb.openSRAM === "function") {
-          gb.openSRAM(JSON.parse(saved));
-        }
-      } catch (e) {}
-    }
+    window.addEventListener("keydown", function (e) { handleKey(e, true); }, false);
+    window.addEventListener("keyup", function (e) { handleKey(e, false); }, false);
+    canvas.addEventListener("click", lockFocus, false);
 
-    window.addEventListener("keydown", function (e) {
+    window.onload = function () {
       lockFocus();
-      if (e.key === "7" || e.keyCode === 55 || e.keyCode === 103) {
-        toggleFullscreen();
-        e.preventDefault();
-        return;
-      }
-      if (e.key === "*") {
-        saveGame();
-        e.preventDefault();
-        return;
-      }
-      var btn = mapKey(e);
-      if (btn !== -1) {
-        if (gb) gb.JoyPadEvent(btn, true);
-        e.preventDefault();
-      }
-    }, true);
-
-    window.addEventListener("keyup", function (e) {
-      if (e.key === "7" || e.keyCode === 55 || e.keyCode === 103) {
-        e.preventDefault();
-        return;
-      }
-      var btn = mapKey(e);
-      if (btn !== -1) {
-        if (gb) gb.JoyPadEvent(btn, false);
-        e.preventDefault();
-      }
-    }, true);
-
-    loadROM();
+      setTimeout(loadROM, 50);
+    };
   </script>
 </body>
 </html>
