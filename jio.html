@@ -48,7 +48,7 @@
     <div id="bar">Loading rom.gb...</div>
   </div>
 
-  <script src="js/other/terminal.js"></script>
+  <script>var DEBUG_MESSAGES=false,DEBUG_WINDOWING=false;function cout(){}</script>
   <script src="js/other/base64.js"></script>
   <script src="js/other/swfobject.js"></script>
   <script src="js/other/resampler.js"></script>
@@ -60,6 +60,7 @@
     var canvas = document.getElementById("gb");
     var bar = document.getElementById("bar");
     var gb = null;
+    var saveReady = false;   // blocks saving until the old save loaded safely
     var SAVE_KEY = "pkmn_red_sram";
     var defaultBar = "2/4/6/8: Move | 1: A | 3: B<br>0: Start | 9: Select | 7: Full | *: Save";
 
@@ -69,7 +70,7 @@
 
     function saveGame(silent) {
       try {
-        if (!gb) return;
+        if (!gb || !saveReady) return;
         var data = null;
         if (gb.MBCRam && gb.MBCRam.length) {
           data = Array.prototype.slice.call(gb.MBCRam);
@@ -88,18 +89,23 @@
       }
     }
 
+    // Returns true when it is safe to save (load worked, or there was no save yet).
     function loadSave() {
       try {
         var saved = localStorage.getItem(SAVE_KEY);
-        if (!saved || !gb || !gb.MBCRam) return;
+        if (!saved) return true;                    // first run: nothing to load
+        if (!gb || !gb.MBCRam || !gb.MBCRam.length) return false;
         var parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          for (var i = 0; i < parsed.length && i < gb.MBCRam.length; i++) {
-            gb.MBCRam[i] = Number(parsed[i]) & 0xff;
-          }
-          gb.MBCRAMBanksEnabled = true;
+        if (!Array.isArray(parsed)) return false;
+        for (var i = 0; i < parsed.length && i < gb.MBCRam.length; i++) {
+          gb.MBCRam[i] = Number(parsed[i]) & 0xff;
         }
-      } catch (e) {}
+        gb.MBCRAMBanksEnabled = true;
+        return true;
+      } catch (e) {
+        bar.innerHTML = "LOAD ERR: " + e.message;
+        return false;
+      }
     }
 
     function tickFrame() {
@@ -125,8 +131,8 @@
         gb = new GameBoyCore(canvas, romBinary);
         gb.start();
         if (typeof gb.stopSound === "function") gb.stopSound();
-        loadSave();
-        bar.innerHTML = defaultBar;
+        saveReady = loadSave();
+        if (saveReady) bar.innerHTML = defaultBar;
         lockFocus();
         setTimeout(function () {
           tickFrame();
