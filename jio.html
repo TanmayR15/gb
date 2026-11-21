@@ -26,6 +26,7 @@
   <script src="js/other/resampler.js"></script>
   <script src="js/other/XAudioServer.js"></script>
   <script src="js/GameBoyCore.js"></script>
+  <script src="js/GameBoyIO.js"></script>
   <script>
     var gb = null;
     var bar = document.getElementById("bar");
@@ -33,7 +34,12 @@
     function tickFrame() {
       if (!gb) return;
       gb.stopEmulator = 0;
-      gb.run();
+      if (typeof gb.executeIteration === "function") {
+        gb.emulatorTicks = 0;
+        gb.CPUCyclesTotal = 70224;
+        gb.executeIteration();
+      }
+      if (typeof gb.run === "function") gb.run();
       if (typeof gb.requestDraw === "function") gb.requestDraw();
     }
 
