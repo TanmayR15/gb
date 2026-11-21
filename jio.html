@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=240, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Pokemon Red</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; color: #0f0; font-family: monospace; text-align: center; overflow: hidden; }
+    canvas { width: 240px; height: 216px; display: block; margin: 10px auto 6px; image-rendering: -moz-crisp-edges; }
+    #bar { font-size: 11px; color: #aaa; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <canvas id="gb" width="160" height="144"></canvas>
+  <div id="bar">D-Pad: Move | 5: A | 8: B<br>0: Start | #: Select | *: Save</div>
+
+  <script src="js/other/base64.js"></script>
+  <script src="js/other/resampler.js"></script>
+  <script src="js/other/XAudioServer.js"></script>
+  <script src="js/GameBoyCore.js"></script>
+  <script>
+    var gb = null;
+    var canvas = document.getElementById("gb");
+    var enableSound = false;
+
+    function loadROM() {
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", "rom.gb", true);
+      xhr.responseType = "arraybuffer";
+      xhr.onload = function () {
+        var bytes = new Uint8Array(xhr.response);
+        var bin = "";
+        for (var i = 0; i < bytes.length; i++) {
+          bin += String.fromCharCode(bytes[i]);
+        }
+        gb = new GameBoyCore(canvas, bin);
+        gb.start();
+        if (!enableSound) gb.stopSound();
+        loadSave();
+        setInterval(function () { if (gb) gb.run(); }, 16);
+      };
+      xhr.send();
+    }
+
+    function saveGame() {
+      if (!gb) return;
+      try {
+        var sram = gb.saveSRAMState();
+        localStorage.setItem("pkmn_red_sram", JSON.stringify(sram));
+        document.getElementById("bar").innerHTML = "SAVED TO BROWSER!";
+      } catch (e) {}
+    }
+
+    function loadSave() {
+      try {
+        var saved = localStorage.getItem("pkmn_red_sram");
+        if (saved && gb) gb.openSRAM(JSON.parse(saved));
+      } catch (e) {}
+    }
+
+    var keyMap = {
+      "ArrowRight": 0,
+      "ArrowLeft": 1,
+      "ArrowUp": 2,
+      "ArrowDown": 3,
+      "5": 4,
+      "Enter": 4,
+      "8": 5,
+      "#": 6,
+      "0": 7
+    };
+
+    window.addEventListener("keydown", function (e) {
+      if (e.key === "*") { saveGame(); e.preventDefault(); return; }
+      if (keyMap.hasOwnProperty(e.key) && gb) {
+        gb.JoyPadEvent(keyMap[e.key], true);
+        e.preventDefault();
+      }
+    });
+
+    window.addEventListener("keyup", function (e) {
+      if (keyMap.hasOwnProperty(e.key) && gb) {
+        gb.JoyPadEvent(keyMap[e.key], false);
+        e.preventDefault();
+      }
+    });
+
+    loadROM();
+  </script>
+</body>
+</html>
