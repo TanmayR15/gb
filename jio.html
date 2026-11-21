@@ -56,15 +56,18 @@
   <script>
     var gb = null;
     var bar = document.getElementById("bar");
-    var defaultBar = "2/4/6/9: Move | 5: A | 8: B<br>0: Start | #: Select | *: Save";
+    var defaultBar = "2/4/6/8: Move | 1: A | 3: B<br>0: Start | 9: Select | *: Save";
 
+    // GameBoyCore JoyPadEvent codes:
+    // 0 = Right, 1 = Left, 2 = Up, 3 = Down, 4 = A, 5 = B, 6 = Select, 7 = Start
     var keyCodeMap = {
       39: 0, 54: 0, // ArrowRight or 6 -> Right
       37: 1, 52: 1, // ArrowLeft  or 4 -> Left
       38: 2, 50: 2, // ArrowUp    or 2 -> Up
-      40: 3, 57: 3, // ArrowDown  or 9 -> Down
-      53: 4, 13: 4, // 5 or Enter      -> A
-      56: 5,        // 8               -> B
+      40: 3, 56: 3, // ArrowDown  or 8 -> Down
+      49: 4, 13: 4, // 1 or Enter      -> A
+      51: 5,        // 3               -> B
+      57: 6,        // 9               -> Select
       48: 7         // 0               -> Start
     };
 
@@ -72,10 +75,10 @@
       if (e.key === "ArrowRight" || e.key === "Right" || e.key === "6") return 0;
       if (e.key === "ArrowLeft"  || e.key === "Left"  || e.key === "4") return 1;
       if (e.key === "ArrowUp"    || e.key === "Up"    || e.key === "2") return 2;
-      if (e.key === "ArrowDown"  || e.key === "Down"  || e.key === "9") return 3;
-      if (e.key === "5" || e.key === "Enter") return 4;
-      if (e.key === "8") return 5;
-      if (e.key === "#") return 6;
+      if (e.key === "ArrowDown"  || e.key === "Down"  || e.key === "8") return 3;
+      if (e.key === "1" || e.key === "Enter") return 4;
+      if (e.key === "3") return 5;
+      if (e.key === "9") return 6;
       if (e.key === "0") return 7;
       if (keyCodeMap.hasOwnProperty(e.keyCode)) return keyCodeMap[e.keyCode];
       return -1;
