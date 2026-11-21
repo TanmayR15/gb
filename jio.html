@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pokemon Red</title>
+  <title>GB Launcher</title>
   <style>
     html, body {
       margin: 0;
@@ -25,8 +25,51 @@
       width: 100%;
       height: 100%;
     }
+    #menu {
+      width: 232px;
+      background: #111;
+      border: 1px solid #444;
+      padding: 8px;
+      text-align: left;
+      font-size: 11px;
+    }
+    #menu-title {
+      color: #9bbc0f;
+      font-weight: bold;
+      margin-bottom: 6px;
+      text-align: center;
+    }
+    #game-list {
+      max-height: 170px;
+      overflow: hidden;
+    }
+    .game-item {
+      padding: 5px 6px;
+      margin: 3px 0;
+      border: 1px solid #2a2a2a;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+    }
+    .game-item.active {
+      background: #9bbc0f;
+      color: #000;
+      font-weight: bold;
+      border-color: #9bbc0f;
+    }
+    .game-item.missing { opacity: 0.45; }
+    .tag {
+      font-size: 9px;
+      opacity: 0.8;
+    }
+    #menu-hint {
+      margin-top: 6px;
+      font-size: 9px;
+      color: #888;
+      text-align: center;
+    }
     canvas {
-      display: block;
+      display: none;
       background: #9bbc0f;
       image-rendering: -moz-crisp-edges;
       image-rendering: pixelated;
@@ -35,20 +78,28 @@
       outline: none;
     }
     #bar {
+      display: none;
       margin-top: 6px;
       font-size: 10px;
       line-height: 1.3;
       color: #aaa;
+      white-space: pre-line;
     }
   </style>
 </head>
 <body>
   <div id="wrap">
+    <div id="menu">
+      <div id="menu-title">SELECT GAME</div>
+      <div id="game-list"></div>
+      <div id="menu-hint">2/8: Move | 1/OK: Play</div>
+    </div>
     <canvas id="gb" width="160" height="144" tabindex="0"></canvas>
-    <div id="bar">Loading rom.gb...</div>
+    <div id="bar">Loading...</div>
   </div>
 
-  <script>var DEBUG_MESSAGES=false,DEBUG_WINDOWING=false;function cout(){}</script>
+  <!-- terminal.js is NOT used here; these stand in for what the core expects -->
+  <script>var DEBUG_MESSAGES = false, DEBUG_WINDOWING = false; function cout() {}</script>
   <script src="js/other/base64.js"></script>
   <script src="js/other/swfobject.js"></script>
   <script src="js/other/resampler.js"></script>
@@ -57,55 +108,176 @@
   <script src="js/GameBoyCore.js"></script>
   <script src="js/GameBoyIO.js"></script>
   <script>
+    // ------------------------------------------------------------------
+    // GAME LIST  -  to add a game: copy the ROM next to this file and add
+    // one line here. The save slot is created automatically from the file
+    // name (e.g. "crystal.gbc" -> "gb_sram_crystal_gbc").
+    // "saveKey" is only for a game that already has an old save.
+    // ------------------------------------------------------------------
+    var GAMES = [
+      { title: "Pokemon Red", file: "rom.gb", saveKey: "pkmn_red_sram" },
+      { title: "Pokemon Crystal", file: "crystal.gbc" },
+      { title: "Pokemon Gold", file: "gold.gbc" },
+      { title: "Zelda: Link's Awakening", file: "zelda.gbc" },
+      { title: "Pokemon TCG", file: "tcg.gbc" }
+    ];
+
+    var menuEl = document.getElementById("menu");
+    var listEl = document.getElementById("game-list");
     var canvas = document.getElementById("gb");
     var bar = document.getElementById("bar");
+
     var gb = null;
-    var saveReady = false;   // blocks saving until the old save loaded safely
-    var SAVE_KEY = "pkmn_red_sram";
-    var defaultBar = "2/4/6/8: Move | 1: A | 3: B<br>0: Start | 9: Select | 7: Full | *: Save";
+    var activeGame = null;
+    var SAVE_KEY = "";
+    var RTC_KEY = "";
+    var saveReady = true;      // becomes false only if an existing save could not be read
+    var inMenu = true;
+    var selectedIdx = 0;
+    var romExists = {};        // file -> true/false, filled in by checkRoms()
+    var defaultBar = "2/4/6/8: Move | 1: A | 3: B\n0: Start | 9: Select | 7: Full\n*: Save | #: Menu";
+
+    // Always use textContent so a file name can never be run as HTML.
+    function setBar(text) { bar.textContent = text; }
+    function flashBar(text, ms) {
+      setBar(text);
+      setTimeout(function () { setBar(defaultBar); }, ms || 1500);
+    }
+
+    function getSaveKey(game) {
+      if (game.saveKey) return game.saveKey;
+      return "gb_sram_" + game.file.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+    }
+
+    function hasRealSave(game) {
+      try {
+        var s = localStorage.getItem(getSaveKey(game));
+        if (!s) return false;
+        var arr = JSON.parse(s);
+        for (var i = 0; i < arr.length; i++) { if (arr[i] !== 0) return true; }
+      } catch (e) {}
+      return false;
+    }
+
+    function getQueryRom() {
+      try {
+        var q = window.location.search.replace(/^\?/, "").split("&");
+        for (var i = 0; i < q.length; i++) {
+          var pair = q[i].split("=");
+          if (pair[0] === "rom" && pair[1]) return decodeURIComponent(pair[1]);
+        }
+      } catch (e) {}
+      return "";
+    }
+
+    // ---------------- MENU ----------------
+    function renderMenu() {
+      listEl.innerHTML = "";
+      for (var i = 0; i < GAMES.length; i++) {
+        (function (idx) {
+          var g = GAMES[idx];
+          var missing = (romExists[g.file] === false);
+          var tag = missing ? "NO ROM" : (hasRealSave(g) ? "SAVED" : g.file);
+          var row = document.createElement("div");
+          row.className = "game-item" + (idx === selectedIdx ? " active" : "") + (missing ? " missing" : "");
+          var t1 = document.createElement("span");
+          t1.textContent = g.title;
+          var t2 = document.createElement("span");
+          t2.className = "tag";
+          t2.textContent = tag;
+          row.appendChild(t1);
+          row.appendChild(t2);
+          row.onclick = function () { selectedIdx = idx; launchGame(GAMES[idx]); };
+          listEl.appendChild(row);
+          if (idx === selectedIdx && row.scrollIntoView) {
+            try { row.scrollIntoView({ block: "nearest" }); } catch (e) {}
+          }
+        })(i);
+      }
+    }
+
+    // Ask the server which ROM files actually exist (greys out missing ones).
+    function checkRoms() {
+      GAMES.forEach(function (g) {
+        try {
+          var x = new XMLHttpRequest();
+          x.open("HEAD", g.file, true);
+          x.onload = function () {
+            romExists[g.file] = (x.status !== 404);   // only a clear 404 counts as missing
+            if (inMenu) renderMenu();
+          };
+          x.onerror = function () {};
+          x.send(null);
+        } catch (e) {}
+      });
+    }
 
     function lockFocus() {
       try { window.focus(); canvas.focus(); } catch (e) {}
     }
 
+    // ---------------- SAVE / LOAD ----------------
     function saveGame(silent) {
       try {
-        if (!gb || !saveReady) return;
-        var data = null;
-        if (gb.MBCRam && gb.MBCRam.length) {
-          data = Array.prototype.slice.call(gb.MBCRam);
-        } else if (typeof gb.saveSRAMState === "function") {
-          data = gb.saveSRAMState();
+        if (!gb || !SAVE_KEY) return;
+        if (!saveReady) {
+          if (!silent) flashBar("NOT SAVED: old save could not be read", 2500);
+          return;                                  // never overwrite a save we failed to load
         }
-        if (data && data.length) {
-          localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-          if (!silent) {
-            bar.innerHTML = "SAVED TO BROWSER!";
-            setTimeout(function () { bar.innerHTML = defaultBar; }, 1500);
-          }
+        if (!gb.cBATT) {
+          if (!silent) flashBar("This game has no battery save", 2000);
+          return;
         }
+        var data = (gb.MBCRam && gb.MBCRam.length) ? Array.prototype.slice.call(gb.MBCRam) : null;
+        if (!data || !data.length) return;
+
+        // Do not write an all-zero (empty) save over nothing.
+        var hasData = false;
+        for (var i = 0; i < data.length; i++) { if (data[i] !== 0) { hasData = true; break; } }
+        if (!hasData && !localStorage.getItem(SAVE_KEY)) {
+          if (!silent) flashBar("Nothing to save yet - save in the game first", 2500);
+          return;
+        }
+
+        localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+
+        // Games with a clock (Gold / Crystal) also need the clock saved.
+        if (gb.cTIMER && typeof gb.saveRTCState === "function") {
+          localStorage.setItem(RTC_KEY, JSON.stringify(gb.saveRTCState()));
+        }
+        if (!silent) flashBar("SAVED (" + SAVE_KEY + ")", 1500);
       } catch (e) {
-        if (!silent) bar.innerHTML = "SAVE ERR: " + e.message;
+        if (!silent) flashBar("SAVE ERR: " + e.message, 2500);
       }
     }
 
-    // Returns true when it is safe to save (load worked, or there was no save yet).
-    function loadSave() {
-      try {
-        var saved = localStorage.getItem(SAVE_KEY);
-        if (!saved) return true;                    // first run: nothing to load
-        if (!gb || !gb.MBCRam || !gb.MBCRam.length) return false;
-        var parsed = JSON.parse(saved);
-        if (!Array.isArray(parsed)) return false;
-        for (var i = 0; i < parsed.length && i < gb.MBCRam.length; i++) {
-          gb.MBCRam[i] = Number(parsed[i]) & 0xff;
+    // Hooks the core calls itself while starting, so the save is in place
+    // BEFORE the game runs its first instruction.
+    function attachSaveHooks(core) {
+      saveReady = true;
+      core.openMBC = function () {
+        try {
+          var s = localStorage.getItem(SAVE_KEY);
+          if (!s) return [];
+          var arr = JSON.parse(s);
+          if (!Array.isArray(arr)) throw new Error("bad save format");
+          return arr;
+        } catch (e) {
+          saveReady = false;
+          setBar("LOAD ERR: " + e.message);
+          return [];
         }
-        gb.MBCRAMBanksEnabled = true;
-        return true;
-      } catch (e) {
-        bar.innerHTML = "LOAD ERR: " + e.message;
-        return false;
-      }
+      };
+      // Only provide RTC data when a valid one exists (empty data would corrupt the clock).
+      try {
+        var r = localStorage.getItem(RTC_KEY);
+        if (r) {
+          var rtc = JSON.parse(r);
+          if (Array.isArray(rtc) && rtc.length >= 13) {
+            core.openRTC = function () { return rtc; };
+          }
+        }
+      } catch (e) {}
     }
 
     function tickFrame() {
@@ -129,10 +301,10 @@
     function bootEmulator(romBinary) {
       try {
         gb = new GameBoyCore(canvas, romBinary);
+        attachSaveHooks(gb);
         gb.start();
         if (typeof gb.stopSound === "function") gb.stopSound();
-        saveReady = loadSave();
-        if (saveReady) bar.innerHTML = defaultBar;
+        if (saveReady) setBar(defaultBar);
         lockFocus();
         setTimeout(function () {
           tickFrame();
@@ -140,33 +312,55 @@
           setInterval(function () { saveGame(true); }, 30000);
         }, 50);
       } catch (err) {
-        bar.innerHTML = "BOOT ERR: " + err.message;
+        gb = null;
+        setBar("BOOT ERR: " + err.message + "\n#: Menu");
       }
     }
 
-    function loadROM() {
+    function launchGame(game) {
+      if (romExists[game.file] === false) {
+        // stay in the menu and just tell the user
+        var t = listEl.children[selectedIdx];
+        if (t && t.lastChild) t.lastChild.textContent = "NO ROM!";
+        return;
+      }
+      inMenu = false;
+      activeGame = game;
+      SAVE_KEY = getSaveKey(game);
+      RTC_KEY = SAVE_KEY + "_rtc";
+      document.title = game.title;
+      menuEl.style.display = "none";
+      canvas.style.display = "block";
+      bar.style.display = "block";
+      setBar("Loading " + game.file + "...");
+
       var xhr = new XMLHttpRequest();
-      xhr.open("GET", "rom.gb", true);
+      xhr.open("GET", game.file, true);
       xhr.overrideMimeType("text/plain; charset=x-user-defined");
       xhr.onload = function () {
-        if (xhr.status === 200 || xhr.status === 0) {
+        if ((xhr.status === 200 || xhr.status === 0) && xhr.responseText.length > 0x150) {
           var raw = xhr.responseText;
           var bin = "";
           for (var i = 0; i < raw.length; i++) {
             bin += String.fromCharCode(raw.charCodeAt(i) & 0xff);
           }
-          bar.innerHTML = "Starting emulator...";
+          setBar("Starting " + game.title + "...");
           setTimeout(function () { bootEmulator(bin); }, 50);
         } else {
-          bar.innerHTML = "ROM ERR: HTTP " + xhr.status;
+          setBar("MISSING FILE: " + game.file + " (HTTP " + xhr.status + ")\n#: Menu");
         }
       };
-      xhr.onerror = function () {
-        bar.innerHTML = "ROM NETWORK ERROR";
-      };
+      xhr.onerror = function () { setBar("ROM NETWORK ERROR\n#: Menu"); };
       xhr.send(null);
     }
 
+    // Save, then reload the page: this cleanly stops the old game.
+    function goToMenu() {
+      if (gb) saveGame(true);
+      setTimeout(function () { window.location.href = window.location.pathname; }, 300);
+    }
+
+    // ---------------- KEYS ----------------
     var keyMap = {
       "6": 0, "ArrowRight": 0,
       "4": 1, "ArrowLeft": 1,
@@ -195,7 +389,34 @@
       return -1;
     }
 
+    function handleMenuKey(e) {
+      var btn = resolveBtn(e);
+      if (btn === 2) {
+        e.preventDefault();
+        selectedIdx = (selectedIdx - 1 + GAMES.length) % GAMES.length;
+        renderMenu();
+      } else if (btn === 3) {
+        e.preventDefault();
+        selectedIdx = (selectedIdx + 1) % GAMES.length;
+        renderMenu();
+      } else if (btn === 4) {
+        e.preventDefault();
+        launchGame(GAMES[selectedIdx]);
+      }
+    }
+
     function handleKey(e, isDown) {
+      if (inMenu) {
+        if (isDown) handleMenuKey(e);
+        return;
+      }
+      // "#" (or M) = back to menu. Works even if the ROM failed to load.
+      // (keyCode 35 is NOT used here: it is the numpad "1" / A button.)
+      if (e.key === "#" || e.key === "m" || e.key === "M" || e.keyCode === 163) {
+        e.preventDefault();
+        if (isDown) goToMenu();
+        return;
+      }
       if (!gb) return;
       if (e.key === "*" || e.keyCode === 42 || e.keyCode === 106) {
         e.preventDefault();
@@ -218,9 +439,25 @@
     window.addEventListener("keyup", function (e) { handleKey(e, false); }, false);
     canvas.addEventListener("click", lockFocus, false);
 
+    // Save when the app is hidden or closed, not just every 30 seconds.
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden && gb) saveGame(true);
+    }, false);
+    window.addEventListener("pagehide", function () { if (gb) saveGame(true); }, false);
+
     window.onload = function () {
       lockFocus();
-      setTimeout(loadROM, 50);
+      var qRom = getQueryRom();
+      if (qRom) {
+        var found = null;
+        for (var i = 0; i < GAMES.length; i++) {
+          if (GAMES[i].file === qRom) { found = GAMES[i]; break; }
+        }
+        launchGame(found || { title: qRom, file: qRom });
+      } else {
+        renderMenu();
+        checkRoms();
+      }
     };
   </script>
 </body>
