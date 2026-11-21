@@ -6,13 +6,39 @@
   <title>Pokemon Red</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; color: #0f0; font-family: monospace; text-align: center; overflow: hidden; }
-    canvas { width: 240px; height: 216px; display: block; margin: 10px auto 6px; background: #9bbc0f; image-rendering: -moz-crisp-edges; }
-    #bar { font-size: 11px; color: #aaa; line-height: 1.4; padding: 0 6px; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      background: #000;
+      color: #0f0;
+      font-family: monospace;
+      text-align: center;
+    }
+    canvas {
+      width: 240px;
+      height: 216px;
+      display: block;
+      margin: 10px auto 6px;
+      background: #9bbc0f;
+      image-rendering: -moz-crisp-edges;
+      outline: none;
+    }
+    #bar { font-size: 10px; color: #aaa; line-height: 1.4; padding: 0 4px; }
+    body.fs canvas {
+      width: 100vw;
+      height: 100vh;
+      margin: 0;
+    }
+    body.fs #bar {
+      display: none;
+    }
   </style>
 </head>
 <body>
-  <canvas id="gb" width="160" height="144"></canvas>
+  <canvas id="gb" width="160" height="144" tabindex="0"></canvas>
   <div id="bar">Loading rom.gb...</div>
 
   <script>
@@ -30,31 +56,70 @@
   <script>
     var gb = null;
     var bar = document.getElementById("bar");
+    var defaultBar = "2/4/6/9: Move | 5: A | 8: B<br>0: Start | #: Select | *: Save";
 
     var keyCodeMap = {
-      39: 0, // Right
-      37: 1, // Left
-      38: 2, // Up
-      40: 3, // Down
-      53: 4, // 5 -> A
-      13: 4, // Enter -> A
-      56: 5, // 8 -> B
-      48: 7  // 0 -> Start
+      39: 0, 54: 0, // ArrowRight or 6 -> Right
+      37: 1, 52: 1, // ArrowLeft  or 4 -> Left
+      38: 2, 50: 2, // ArrowUp    or 2 -> Up
+      40: 3, 57: 3, // ArrowDown  or 9 -> Down
+      53: 4, 13: 4, // 5 or Enter      -> A
+      56: 5,        // 8               -> B
+      48: 7         // 0               -> Start
     };
 
     function mapKey(e) {
-      if (e.key === "ArrowRight" || e.key === "Right") return 0;
-      if (e.key === "ArrowLeft"  || e.key === "Left")  return 1;
-      if (e.key === "ArrowUp"    || e.key === "Up")    return 2;
-      if (e.key === "ArrowDown"  || e.key === "Down")  return 3;
-      if (e.key === "5") return 4;
-      if (e.key === "Enter") return 4;
+      if (e.key === "ArrowRight" || e.key === "Right" || e.key === "6") return 0;
+      if (e.key === "ArrowLeft"  || e.key === "Left"  || e.key === "4") return 1;
+      if (e.key === "ArrowUp"    || e.key === "Up"    || e.key === "2") return 2;
+      if (e.key === "ArrowDown"  || e.key === "Down"  || e.key === "9") return 3;
+      if (e.key === "5" || e.key === "Enter") return 4;
       if (e.key === "8") return 5;
       if (e.key === "#") return 6;
       if (e.key === "0") return 7;
       if (keyCodeMap.hasOwnProperty(e.keyCode)) return keyCodeMap[e.keyCode];
       return -1;
     }
+
+    function lockFocus() {
+      if (canvas && typeof canvas.focus === "function") {
+        try { canvas.focus(); } catch (e) {}
+      }
+    }
+
+    function isFullscreen() {
+      return !!(
+        document.fullscreenElement ||
+        document.mozFullScreenElement ||
+        document.webkitFullscreenElement ||
+        document.body.classList.contains("fs")
+      );
+    }
+
+    function toggleFullscreen() {
+      var el = document.documentElement;
+      if (!isFullscreen()) {
+        document.body.classList.add("fs");
+        var req = el.requestFullscreen || el.mozRequestFullScreen || el.webkitRequestFullscreen;
+        if (req) {
+          try { req.call(el); } catch (err) {}
+        }
+      } else {
+        document.body.classList.remove("fs");
+        var exit = document.exitFullscreen || document.mozCancelFullScreen || document.webkitExitFullscreen;
+        if (exit) {
+          try { exit.call(document); } catch (err) {}
+        }
+      }
+      lockFocus();
+    }
+
+    document.addEventListener("fullscreenchange", function () {
+      document.body.classList.toggle("fs", isFullscreen());
+    });
+    document.addEventListener("mozfullscreenchange", function () {
+      document.body.classList.toggle("fs", isFullscreen());
+    });
 
     function tickFrame() {
       if (!gb) return;
@@ -75,7 +140,8 @@
         if (typeof gb.stopSound === "function") gb.stopSound();
         loadSave();
         tickFrame();
-        bar.innerHTML = "D-Pad: Move | 5: A | 8: B<br>0: Start | #: Select | *: Save";
+        lockFocus();
+        bar.innerHTML = defaultBar;
         setInterval(tickFrame, 16);
       } catch (err) {
         bar.innerHTML = "BOOT ERR: " + err.message;
@@ -114,6 +180,7 @@
         var sram = gb.saveSRAMState();
         localStorage.setItem("pkmn_red_sram", JSON.stringify(sram));
         bar.innerHTML = "SAVED TO BROWSER!";
+        setTimeout(function () { bar.innerHTML = defaultBar; }, 2000);
       } catch (e) {}
     }
 
@@ -127,7 +194,12 @@
     }
 
     window.addEventListener("keydown", function (e) {
-      bar.innerHTML = "key=" + e.key + " | kc=" + e.keyCode;
+      lockFocus();
+      if (e.key === "7" || e.keyCode === 55 || e.keyCode === 103) {
+        toggleFullscreen();
+        e.preventDefault();
+        return;
+      }
       if (e.key === "*") {
         saveGame();
         e.preventDefault();
@@ -141,6 +213,10 @@
     }, true);
 
     window.addEventListener("keyup", function (e) {
+      if (e.key === "7" || e.keyCode === 55 || e.keyCode === 103) {
+        e.preventDefault();
+        return;
+      }
       var btn = mapKey(e);
       if (btn !== -1) {
         if (gb) gb.JoyPadEvent(btn, false);
