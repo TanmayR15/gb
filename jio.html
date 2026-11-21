@@ -18,6 +18,9 @@
       text-align: center;
     }
     #wrap {
+      position: fixed;
+      left: 0;
+      top: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -122,6 +125,7 @@
       { title: "Pokemon TCG", file: "tcg.gbc" }
     ];
 
+    var wrapEl = document.getElementById("wrap");
     var menuEl = document.getElementById("menu");
     var listEl = document.getElementById("game-list");
     var canvas = document.getElementById("gb");
@@ -287,6 +291,27 @@
       gb.run();
     }
 
+    // Size everything from the REAL window size (in pixels) instead of CSS "100%",
+    // which KaiOS reports wrongly while entering/leaving fullscreen.
+    function fitScreen() {
+      var W = window.innerWidth || document.documentElement.clientWidth || 240;
+      var H = window.innerHeight || document.documentElement.clientHeight || 320;
+      wrapEl.style.width = W + "px";
+      wrapEl.style.height = H + "px";
+      if (inMenu) return;
+      var barH = bar.offsetHeight + 6;                    // text under the picture
+      var scale = Math.min(W / 160, (H - barH) / 144);    // keep the 160:144 shape
+      if (!(scale > 0.5)) scale = Math.min(W / 160, H / 144);
+      canvas.style.width = Math.floor(160 * scale) + "px";
+      canvas.style.height = Math.floor(144 * scale) + "px";
+    }
+    // KaiOS reports the new size late, so measure again a few times.
+    function fitSoon() {
+      fitScreen();
+      var waits = [100, 300, 800, 1700];
+      for (var i = 0; i < waits.length; i++) setTimeout(fitScreen, waits[i]);
+    }
+
     function toggleFullscreen() {
       var el = document.documentElement;
       if (!document.fullscreenElement && !document.mozFullScreenElement) {
@@ -296,6 +321,9 @@
         if (document.exitFullscreen) document.exitFullscreen();
         else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
       }
+      fitSoon();
+      // Shows the window size the phone reports (handy if the picture is still off).
+      setTimeout(function () { flashBar("Screen: " + window.innerWidth + "x" + window.innerHeight, 1500); }, 900);
     }
 
     function bootEmulator(romBinary) {
@@ -333,6 +361,7 @@
       canvas.style.display = "block";
       bar.style.display = "block";
       setBar("Loading " + game.file + "...");
+      fitSoon();
 
       var xhr = new XMLHttpRequest();
       xhr.open("GET", game.file, true);
@@ -438,6 +467,10 @@
     window.addEventListener("keydown", function (e) { handleKey(e, true); }, false);
     window.addEventListener("keyup", function (e) { handleKey(e, false); }, false);
     canvas.addEventListener("click", lockFocus, false);
+    window.addEventListener("resize", fitSoon, false);
+    window.addEventListener("orientationchange", fitSoon, false);
+    document.addEventListener("fullscreenchange", fitSoon, false);
+    document.addEventListener("mozfullscreenchange", fitSoon, false);
 
     // Save when the app is hidden or closed, not just every 30 seconds.
     document.addEventListener("visibilitychange", function () {
@@ -447,6 +480,7 @@
 
     window.onload = function () {
       lockFocus();
+      fitScreen();
       var qRom = getQueryRom();
       if (qRom) {
         var found = null;
