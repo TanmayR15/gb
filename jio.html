@@ -16,10 +16,11 @@
   <div id="bar">Loading rom.gb...</div>
 
   <script>
-    // Define globals before GameBoyCore.js initializes audio/CPU state
+    var canvas = document.getElementById("gb");
     window.settings = [false, false, false, 1, true, false, 8, 10, 20, false, false, false, false, true, [true, true, true, true]];
     window.cout = function () {};
     window.pause = function () {};
+    window.initNewCanvas = function () { return canvas; };
   </script>
   <script src="js/other/base64.js"></script>
   <script src="js/other/resampler.js"></script>
@@ -27,7 +28,6 @@
   <script src="js/GameBoyCore.js"></script>
   <script>
     var gb = null;
-    var canvas = document.getElementById("gb");
     var bar = document.getElementById("bar");
 
     function bootEmulator(romBinary) {
