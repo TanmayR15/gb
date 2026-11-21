@@ -13,32 +13,49 @@
 </head>
 <body>
   <canvas id="gb" width="160" height="144"></canvas>
-  <div id="bar">D-Pad: Move | 5: A | 8: B<br>0: Start | #: Select | *: Save</div>
+  <div id="bar">Loading rom.gb...</div>
 
   <script src="js/other/base64.js"></script>
   <script src="js/other/resampler.js"></script>
   <script src="js/other/XAudioServer.js"></script>
   <script src="js/GameBoyCore.js"></script>
   <script>
+    // Required globals expected by GameBoyCore.js when GameBoyIO.js is omitted
+    var settings = [false, false, false, 1, true, false, 8, 10, 20, false, false, false, false, true, [true, true, true, true]];
+    function cout() {}
+    function pause() {}
+
     var gb = null;
     var canvas = document.getElementById("gb");
-    var enableSound = false;
+    var bar = document.getElementById("bar");
 
     function loadROM() {
       var xhr = new XMLHttpRequest();
       xhr.open("GET", "rom.gb", true);
       xhr.responseType = "arraybuffer";
       xhr.onload = function () {
-        var bytes = new Uint8Array(xhr.response);
-        var bin = "";
-        for (var i = 0; i < bytes.length; i++) {
-          bin += String.fromCharCode(bytes[i]);
+        if (xhr.status !== 200) {
+          bar.innerHTML = "ERROR " + xhr.status + ": rom.gb not found in repo!";
+          return;
         }
-        gb = new GameBoyCore(canvas, bin);
-        gb.start();
-        if (!enableSound) gb.stopSound();
-        loadSave();
-        setInterval(function () { if (gb) gb.run(); }, 16);
+        try {
+          var bytes = new Uint8Array(xhr.response);
+          var bin = "";
+          for (var i = 0; i < bytes.length; i++) {
+            bin += String.fromCharCode(bytes[i]);
+          }
+          gb = new GameBoyCore(canvas, bin);
+          gb.start();
+          gb.stopSound();
+          loadSave();
+          bar.innerHTML = "D-Pad: Move | 5: A | 8: B<br>0: Start | #: Select | *: Save";
+          setInterval(function () { if (gb) gb.run(); }, 16);
+        } catch (err) {
+          bar.innerHTML = "CORE ERROR: " + err.message;
+        }
+      };
+      xhr.onerror = function () {
+        bar.innerHTML = "NETWORK ERROR loading rom.gb";
       };
       xhr.send();
     }
@@ -48,7 +65,7 @@
       try {
         var sram = gb.saveSRAMState();
         localStorage.setItem("pkmn_red_sram", JSON.stringify(sram));
-        document.getElementById("bar").innerHTML = "SAVED TO BROWSER!";
+        bar.innerHTML = "SAVED TO BROWSER!";
       } catch (e) {}
     }
 
